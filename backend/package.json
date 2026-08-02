@@ -1,0 +1,16 @@
+{
+  "name": "ai-interview-simulator",
+  "version": "1.0.0",
+  "description": "JavaScript interview simulator with a Node.js backend and PostgreSQL database.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env server.js",
+    "check": "node --check ../frontend/app.js && node --check server.js"
+  },
+  "dependencies": {
+    "openai": "^5.20.0",
+    "pg": "^8.16.3",
+    "zod": "^3.25.76"
+  },
+  "private": true
+}

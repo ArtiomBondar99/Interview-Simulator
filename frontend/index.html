@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MockMate AI | Interview Simulator</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <div class="page-bg"></div>
+
+  <nav class="navbar">
+    <a class="nav-brand" href="#">
+      <span class="brand-mark">AI</span>
+      <span>
+        <strong>MockMate <em>AI</em></strong>
+        <small data-i18n="brandSubtitle">AI Interview Simulator</small>
+      </span>
+    </a>
+
+    <div class="nav-links" aria-label="Primary navigation">
+      <a href="#dashboard" data-i18n="navDashboard">Dashboard</a>
+      <a href="#history" data-i18n="navHistory">History</a>
+      <a href="#interview-area" data-i18n="navAnalytics">Analytics</a>
+      <a href="#setup" data-i18n="navPricing">Pricing</a>
+    </div>
+
+    <label class="lang-switch" for="interface-language">
+      <span data-i18n="navLanguage">Language</span>
+      <select id="interface-language" name="interface-language">
+        <option value="he">עברית</option>
+        <option value="en">English</option>
+      </select>
+    </label>
+
+    <button class="profile-button" type="button" aria-label="User menu">
+      <span>AS</span>
+      <b>⌄</b>
+    </button>
+  </nav>
+
+  <main id="dashboard" class="dashboard-shell">
+    <section class="hero-section">
+      <div class="hero-badge" data-i18n="heroBadge">AI-Powered Interview Practice</div>
+      <h1>
+        <span data-i18n="heroTitlePractice">Practice</span>
+        <span data-i18n="heroTitleSmarter">smarter.</span><br />
+        <span data-i18n="heroTitleInterview">Interview</span>
+        <span data-i18n="heroTitleBetter">better.</span>
+      </h1>
+      <p class="hero-text" data-i18n="heroText">
+        Get personalized questions, structured end-of-session feedback, and progress tracking for your next tech role.
+      </p>
+
+      <div class="feature-grid">
+        <article class="feature-card">
+          <div class="feature-icon">?</div>
+          <h3 data-i18n="featureRealTitle">Real Interview Questions</h3>
+          <p data-i18n="featureRealText">Practice with role-specific questions based on your background.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon">AI</div>
+          <h3 data-i18n="featureFeedbackTitle">Final AI-Style Feedback</h3>
+          <p data-i18n="featureFeedbackText">Get practical guidance only after the interview ends.</p>
+        </article>
+        <article class="feature-card">
+          <div class="feature-icon">↗</div>
+          <h3 data-i18n="featureProgressTitle">Progress Tracking</h3>
+          <p data-i18n="featureProgressText">Save sessions and review your interview history over time.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="setup" class="setup-card" aria-labelledby="setup-title">
+      <div class="setup-title">
+        <div class="setup-icon">▣</div>
+        <div>
+          <h2 id="setup-title" data-i18n="setupTitle">Interview Setup</h2>
+          <p data-i18n="setupSubtitle">Configure your AI interview experience</p>
+        </div>
+      </div>
+
+      <form id="setup-form" class="setup-form" dir="rtl">
+        <div class="form-grid">
+          <label data-i18n="formNameLabel">
+            First Name
+            <input id="candidate-name" name="candidate-name" type="text" placeholder="First name" />
+          </label>
+
+          <label data-i18n="formIdLabel">
+            ID / Employee Number
+            <input id="candidate-id" name="candidate-id" type="text" placeholder="ID or employee number" />
+          </label>
+        </div>
+
+        <label data-i18n="formProfileLabel">
+          Tell us about yourself
+          <textarea id="user-profile" name="user-profile" rows="4" data-i18n-placeholder="formProfilePlaceholder"
+            placeholder="A backend developer with experience in SQL, Python, and building scalable systems. Focused on clean, maintainable code."></textarea>
+        </label>
+
+        <label data-i18n="formRoleLabel">
+          Role
+          <select id="role" name="role">
+            <optgroup label="Software Engineering">
+              <option value="frontend">Frontend Developer</option>
+              <option value="react">React Developer</option>
+              <option value="angular">Angular Developer</option>
+              <option value="vue">Vue Developer</option>
+              <option value="backend-node" selected>Backend Developer</option>
+              <option value="python-backend">Python Backend Developer</option>
+              <option value="java-backend">Java Backend Developer</option>
+              <option value="dotnet-backend">.NET Backend Developer</option>
+              <option value="php-backend">PHP Backend Developer</option>
+              <option value="ruby-backend">Ruby Backend Developer</option>
+              <option value="golang-backend">Go Backend Developer</option>
+              <option value="fullstack">Full Stack Developer</option>
+              <option value="mobile-ios">iOS Developer</option>
+              <option value="mobile-android">Android Developer</option>
+              <option value="mobile-flutter">Flutter Developer</option>
+              <option value="mobile-react-native">React Native Developer</option>
+              <option value="embedded">Embedded Software Engineer</option>
+              <option value="firmware">Firmware Engineer</option>
+              <option value="game-dev">Game Developer</option>
+              <option value="blockchain">Blockchain Developer</option>
+              <option value="software-architect">Software Architect</option>
+            </optgroup>
+
+            <optgroup label="Data and AI">
+              <option value="data-analyst">Data Analyst</option>
+              <option value="bi-developer">BI Developer</option>
+              <option value="data-engineer">Data Engineer</option>
+              <option value="data-scientist">Data Scientist</option>
+              <option value="ml-engineer">Machine Learning Engineer</option>
+              <option value="ai-engineer">AI Engineer</option>
+              <option value="dba">Database Administrator</option>
+            </optgroup>
+
+            <optgroup label="QA">
+              <option value="qa">QA Tester</option>
+              <option value="manual-qa">Manual QA Engineer</option>
+              <option value="automation">Automation QA Engineer</option>
+              <option value="performance-qa">Performance QA Engineer</option>
+            </optgroup>
+
+            <optgroup label="Infrastructure and Security">
+              <option value="devops">DevOps Engineer</option>
+              <option value="sre">Site Reliability Engineer</option>
+              <option value="cloud-engineer">Cloud Engineer</option>
+              <option value="system-admin">System Administrator</option>
+              <option value="network-engineer">Network Engineer</option>
+              <option value="cyber-security">Cyber Security Analyst</option>
+              <option value="appsec">Application Security Engineer</option>
+              <option value="soc-analyst">SOC Analyst</option>
+              <option value="penetration-tester">Penetration Tester</option>
+            </optgroup>
+
+            <optgroup label="Product, Design, and Management">
+              <option value="product">HR / Product Interview</option>
+              <option value="project-manager">Project Manager</option>
+              <option value="scrum-master">Scrum Master</option>
+              <option value="ux-ui">UX/UI Designer</option>
+              <option value="ux-researcher">UX Researcher</option>
+              <option value="business-analyst">Business Analyst</option>
+              <option value="system-analyst">System Analyst</option>
+            </optgroup>
+
+            <optgroup label="Customer and Business Tech">
+              <option value="technical-support">Technical Support Engineer</option>
+              <option value="helpdesk">Help Desk Specialist</option>
+              <option value="solutions-architect">Solutions Architect</option>
+              <option value="sales-engineer">Sales Engineer</option>
+              <option value="customer-success">Customer Success Manager</option>
+              <option value="technical-writer">Technical Writer</option>
+              <option value="implementation-specialist">Implementation Specialist</option>
+            </optgroup>
+
+            <option value="general-tech">General Technical Interview</option>
+          </select>
+        </label>
+
+        <div class="form-grid">
+          <label data-i18n="formLevelLabel">
+            Level
+            <select id="level" name="level">
+              <option value="junior">Junior</option>
+              <option value="mid">Mid</option>
+              <option value="senior">Senior</option>
+            </select>
+          </label>
+
+          <label data-i18n="formInterviewLanguageLabel">
+            Interview language
+            <select id="interview-language" name="interview-language">
+              <option value="he">עברית</option>
+              <option value="en">English</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="form-grid">
+          <label data-i18n="formMinutesLabel">
+            Interview duration (minutes)
+            <input id="interview-minutes" name="interview-minutes" type="number" min="3" max="60" value="30" />
+          </label>
+
+          <label data-i18n="formQuestionCountLabel">
+            Number of questions
+            <input id="question-count" name="question-count" type="number" min="1" value="10" />
+          </label>
+        </div>
+
+        <button class="start-button" type="submit" data-i18n="formStartButton">Start Interview</button>
+      </form>
+    </section>
+
+    <section class="role-section">
+      <div class="role-section-header">
+        <h2 data-i18n="roleSectionTitle">Choose Your Role</h2>
+        <a href="#setup" data-i18n="roleSectionLink">View all roles →</a>
+      </div>
+
+      <div class="interview-type-grid" aria-label="Interview type shortcuts">
+        <button class="type-card active" type="button" data-role="backend-node">
+          <span class="role-icon">⌘</span>
+          <strong>Backend<br />Developer</strong>
+          <small>APIs, Databases, Systems</small>
+        </button>
+        <button class="type-card" type="button" data-role="frontend">
+          <span class="role-icon">▭</span>
+          <strong>Frontend<br />Developer</strong>
+          <small>React, Vue, JavaScript</small>
+        </button>
+        <button class="type-card" type="button" data-role="devops">
+          <span class="role-icon">☁</span>
+          <strong>DevOps<br />Engineer</strong>
+          <small>CI/CD, Cloud, Automation</small>
+        </button>
+        <button class="type-card" type="button" data-role="ai-engineer">
+          <span class="role-icon">AI</span>
+          <strong>AI / ML<br />Engineer</strong>
+          <small>Machine Learning, NLP</small>
+        </button>
+        <button class="type-card" type="button" data-role="product">
+          <span class="role-icon">HR</span>
+          <strong>HR<br />Professional</strong>
+          <small>HR Skills, Behavioral</small>
+        </button>
+      </div>
+    </section>
+
+    <section id="interview-area" class="panel interview-panel" aria-live="polite">
+      <div id="empty-state" class="empty-state">
+        <div class="empty-icon">AI</div>
+        <h2 data-i18n="emptyStateTitle">Your interview workspace is ready.</h2>
+        <p data-i18n="emptyStateText">Choose a role, add your background, and generate a personalized interview session.
+        </p>
+      </div>
+
+      <div id="export-actions" class="export-actions hidden">
+        <span class="export-label">Export answers:</span>
+        <button id="download-txt" class="secondary-button" type="button">TXT</button>
+        <button id="download-md" class="secondary-button" type="button">Markdown</button>
+        <button id="download-csv" class="secondary-button" type="button">CSV</button>
+        <button id="download-json" class="secondary-button" type="button">JSON</button>
+      </div>
+
+      <div id="interview" class="interview hidden">
+        <div class="interview-header">
+          <div>
+            <p id="progress-label" class="progress-label">Question 1 of 6</p>
+            <progress id="progress" value="1" max="6"></progress>
+          </div>
+          <div id="timer" class="timer">10:00</div>
+        </div>
+
+        <article class="question-card">
+          <p id="question-meta" class="question-meta"></p>
+          <h2 id="question-text"></h2>
+          <button id="hint-button" class="secondary-button" type="button">Show hint</button>
+          <p id="hint-text" class="hint hidden"></p>
+        </article>
+
+        <label class="answer-label" for="answer">
+          Your answer
+          <textarea id="answer" rows="8" placeholder="Answer like you would in a real interview..."></textarea>
+        </label>
+
+        <div id="feedback" class="feedback hidden"></div>
+
+        <div class="actions">
+          <button id="submit-answer" type="button">Save answer</button>
+          <button id="next-question" class="secondary-button" type="button" disabled>Next question</button>
+          <button id="restart" class="ghost-button" type="button">Reset</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="history" class="panel results-panel">
+      <div class="section-title">
+        <div>
+          <p class="eyebrow">Saved Sessions</p>
+          <h2>Interview history</h2>
+        </div>
+        <button id="clear-history" class="ghost-button" type="button">Clear history</button>
+      </div>
+      <ul id="history-list" class="history-list"></ul>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+
+</html>
