@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
-    "check": "node --check ../frontend/app.js && node --check server.js"
+    "check": "node --check ../frontend/app.js && node --check server.js",
+    "test": "node --env-file-if-exists=.env --test"
   },
   "dependencies": {
     "openai": "^5.20.0",

@@ -45,6 +45,7 @@ async function initDatabase() {
       improvement_score INTEGER DEFAULT NULL,
       answers_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       overall_feedback TEXT DEFAULT '',
+      summary_json JSONB NOT NULL DEFAULT '{}'::jsonb,
       status TEXT NOT NULL DEFAULT 'in_progress',
       started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       completed_at TIMESTAMPTZ
@@ -59,7 +60,8 @@ async function initDatabase() {
       ADD COLUMN IF NOT EXISTS candidate_id TEXT NOT NULL DEFAULT '',
       ADD COLUMN IF NOT EXISTS previous_score INTEGER DEFAULT NULL,
       ADD COLUMN IF NOT EXISTS improvement_score INTEGER DEFAULT NULL,
-      ADD COLUMN IF NOT EXISTS overall_feedback TEXT DEFAULT ''
+      ADD COLUMN IF NOT EXISTS overall_feedback TEXT DEFAULT '',
+      ADD COLUMN IF NOT EXISTS summary_json JSONB NOT NULL DEFAULT '{}'::jsonb
   `);
 }
 
@@ -144,6 +146,69 @@ async function handleApi(request, response, url) {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/ai/evaluate-answer") {
+    const body = await readJsonBody(request);
+    const question = String(body.question || "").slice(0, 2000);
+    const answer = String(body.answer || "").slice(0, 6000);
+
+    if (!question || !answer) {
+      sendJson(response, 400, { error: "question and answer are required." });
+      return;
+    }
+
+    const difficulty = ["easy", "medium", "hard"].includes(body.difficulty) ? body.difficulty : "medium";
+    const history = Array.isArray(body.history) ? body.history.slice(-3) : [];
+
+    const result = await ai.evaluateCandidateAnswer({
+      role: String(body.role || "general-tech").slice(0, 100),
+      roleLabel: String(body.roleLabel || body.role || "General technical interview").slice(0, 200),
+      level: String(body.level || "junior").slice(0, 50),
+      language: body.language === "en" ? "en" : "he",
+      topic: String(body.topic || "").slice(0, 200),
+      question,
+      answer,
+      difficulty,
+      history: history.map((item) => ({
+        topic: String(item.topic || "").slice(0, 200),
+        question: String(item.question || "").slice(0, 500),
+        answerLevel: item.answerLevel,
+        difficulty: item.difficulty,
+      })),
+    });
+
+    sendJson(response, 200, result);
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ai/summarize") {
+    const body = await readJsonBody(request);
+    const evaluatedAnswers = Array.isArray(body.evaluatedAnswers) ? body.evaluatedAnswers.slice(0, 20) : [];
+
+    if (!evaluatedAnswers.length) {
+      sendJson(response, 400, { error: "At least one evaluated answer is required." });
+      return;
+    }
+
+    const result = await ai.synthesizeInterviewSummary({
+      role: String(body.role || "general-tech").slice(0, 100),
+      roleLabel: String(body.roleLabel || body.role || "General technical interview").slice(0, 200),
+      level: String(body.level || "junior").slice(0, 50),
+      language: body.language === "en" ? "en" : "he",
+      evaluatedAnswers: evaluatedAnswers.map((item) => ({
+        topic: String(item.topic || "").slice(0, 200),
+        difficulty: item.difficulty,
+        score: Number(item.score) || 0,
+        answerLevel: item.answerLevel,
+        strengths: Array.isArray(item.strengths) ? item.strengths.slice(0, 6) : [],
+        mistakes: Array.isArray(item.mistakes) ? item.mistakes.slice(0, 6) : [],
+        missingPoints: Array.isArray(item.missingPoints) ? item.missingPoints.slice(0, 6) : [],
+      })),
+    });
+
+    sendJson(response, 200, result);
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/interviews") {
     sendJson(response, 200, await listInterviews());
     return;
@@ -203,6 +268,7 @@ async function handleApi(request, response, url) {
     const maxScore = Number(body.maxScore || 0);
     const overallFeedback = String(body.overallFeedback || "");
     const answers = Array.isArray(body.answers) ? body.answers : [];
+    const summary = body.summary && typeof body.summary === "object" ? body.summary : {};
 
     // Get the same candidate's most recent other completed interview for the same role,
     // matched by candidate_id (falls back to candidate_name client-side, see frontend/app.js).
@@ -225,11 +291,11 @@ async function handleApi(request, response, url) {
       `
       UPDATE interviews
       SET score = $1, max_score = $2, answers_json = $3::jsonb, overall_feedback = $4,
-          previous_score = $5, improvement_score = $6,
+          previous_score = $5, improvement_score = $6, summary_json = $7::jsonb,
           status = 'completed', completed_at = NOW()
-      WHERE id = $7
+      WHERE id = $8
       `,
-      [score, maxScore, JSON.stringify(answers), overallFeedback, previousScore, improvementScore, id],
+      [score, maxScore, JSON.stringify(answers), overallFeedback, previousScore, improvementScore, JSON.stringify(summary), id],
     );
 
     if (result.rowCount === 0) {
@@ -290,24 +356,28 @@ async function handleRequest(request, response) {
   }
 }
 
-initDatabase()
-  .then(() => {
-    const server = createServer(handleRequest).listen(PORT, () => {
-      console.log(`Server running at http://localhost:${PORT}`);
-      console.log("Connected to PostgreSQL.");
-    });
-
-    const shutdown = () => {
-      server.close(async () => {
-        await db.end();
-        process.exit(0);
+if (require.main === module) {
+  initDatabase()
+    .then(() => {
+      const server = createServer(handleRequest).listen(PORT, () => {
+        console.log(`Server running at http://localhost:${PORT}`);
+        console.log("Connected to PostgreSQL.");
       });
-    };
 
-    process.on("SIGINT", shutdown);
-    process.on("SIGTERM", shutdown);
-  })
-  .catch((error) => {
-    console.error("Failed to initialize PostgreSQL:", error.message);
-    process.exit(1);
-  });
+      const shutdown = () => {
+        server.close(async () => {
+          await db.end();
+          process.exit(0);
+        });
+      };
+
+      process.on("SIGINT", shutdown);
+      process.on("SIGTERM", shutdown);
+    })
+    .catch((error) => {
+      console.error("Failed to initialize PostgreSQL:", error.message);
+      process.exit(1);
+    });
+}
+
+module.exports = { handleRequest, initDatabase, db };

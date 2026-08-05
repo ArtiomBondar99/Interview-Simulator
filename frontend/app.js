@@ -840,6 +840,9 @@ async function startInterview(event) {
       aiModel,
       answers: [],
       score: 0,
+      difficultyHistory: [],
+      pendingFollowUp: null,
+      summary: null,
     };
     currentIndex = 0;
     secondsLeft = interviewMinutes * 60;
@@ -873,7 +876,10 @@ function showQuestion() {
   progressLabel.textContent = text.questionProgress(currentIndex + 1, total);
   progress.value = currentIndex + 1;
   progress.max = total;
-  questionMeta.textContent = `${currentInterview.roleLabel} | ${currentInterview.level} | GPT: ${currentInterview.aiModel}`;
+  const difficultyLabels = { easy: text.difficultyEasy, medium: text.difficultyMedium, hard: text.difficultyHard };
+  const difficultyLabel = difficultyLabels[question.difficulty] || text.difficultyMedium;
+  const followUpLabel = question.isFollowUp ? ` | ${text.followUpBadge}` : "";
+  questionMeta.textContent = `${currentInterview.roleLabel} | ${currentInterview.level} | ${difficultyLabel}${followUpLabel} | GPT: ${currentInterview.aiModel}`;
   questionText.textContent = question.question;
   hintText.textContent = question.hint;
   hintText.classList.add("hidden");
@@ -893,13 +899,13 @@ function startInterviewTimer() {
   clearInterval(timerId);
   renderTimer();
 
-  timerId = setInterval(() => {
+  timerId = setInterval(async () => {
     secondsLeft -= 1;
     renderTimer();
 
     if (secondsLeft <= 0) {
       clearInterval(timerId);
-      if (!currentInterview.answers[currentIndex]) evaluateAnswer();
+      if (!currentInterview.answers[currentIndex]) await evaluateAnswer();
       finishInterview(true);
     }
   }, 1000);
@@ -940,21 +946,59 @@ function getQuestionScore(userAnswer, matches, keywordCount) {
   return 0;
 }
 
-function renderFeedback(score, matchedKeywords, allKeywords) {
+function renderFeedback(evaluation) {
   const text = uiText[currentInterview?.language || "he"] || uiText.he;
-  const missingKeywords = allKeywords.filter((keyword) => !matchedKeywords.includes(keyword));
-  const levelClass = score === 2 ? "good" : score === 1 ? "partial" : "needs-work";
-  const title = score === 2 ? text.strong : score === 1 ? text.partial : text.weak;
+  const levelClass = evaluation.answerLevel === "strong" ? "good" : evaluation.answerLevel === "partial" ? "partial" : "needs-work";
+  const title = evaluation.answerLevel === "strong" ? text.strong : evaluation.answerLevel === "partial" ? text.partial : text.weak;
+  const strengths = Array.isArray(evaluation.strengths) ? evaluation.strengths : [];
+  const missingPoints = Array.isArray(evaluation.missingPoints) ? evaluation.missingPoints : [];
 
   feedback.className = `feedback ${levelClass}`;
   feedback.innerHTML = `
-    <strong>${title}</strong><br>
-    ${text.detected}: ${matchedKeywords.length ? matchedKeywords.join(", ") : text.noneDetected}.<br>
-    ${text.missing}: ${missingKeywords.length ? missingKeywords.join(", ") : text.noneMissing}.
+    <strong>${escapeHtml(title)} — ${Math.round(evaluation.score)}/100</strong><br>
+    ${escapeHtml(evaluation.feedback || "")}
+    ${strengths.length ? `<p>${text.strengthsLabel}: ${escapeHtml(strengths.join(", "))}</p>` : ""}
+    ${missingPoints.length ? `<p>${text.missingPointsLabel}: ${escapeHtml(missingPoints.join(", "))}</p>` : ""}
   `;
 }
 
+const DIFFICULTY_RANK = { easy: 0, medium: 1, hard: 2 };
+
+function reorderRemainingQuestionsByDifficulty(fromIndex, targetDifficulty) {
+  const targetRank = DIFFICULTY_RANK[targetDifficulty] ?? 1;
+  const head = currentInterview.questions.slice(0, fromIndex + 1);
+  const tail = currentInterview.questions.slice(fromIndex + 1);
+
+  tail.sort((a, b) => {
+    const rankA = Math.abs((DIFFICULTY_RANK[a.difficulty] ?? 1) - targetRank);
+    const rankB = Math.abs((DIFFICULTY_RANK[b.difficulty] ?? 1) - targetRank);
+    return rankA - rankB;
+  });
+
+  currentInterview.questions = [...head, ...tail];
+}
+
 function goToNextQuestion() {
+  if (currentInterview.pendingFollowUp) {
+    const currentQuestion = currentInterview.questions[currentIndex];
+    const followUp = {
+      topic: currentQuestion.topic,
+      question: currentInterview.pendingFollowUp,
+      hint: "",
+      keywords: currentQuestion.keywords || [],
+      difficulty: currentQuestion.difficulty || "medium",
+      isFollowUp: true,
+      suggestedAnswer: "",
+    };
+    currentInterview.questions.splice(currentIndex + 1, 0, followUp);
+    currentInterview.pendingFollowUp = null;
+  } else {
+    const lastAnswer = currentInterview.answers[currentIndex];
+    if (lastAnswer?.recommendedNextDifficulty) {
+      reorderRemainingQuestionsByDifficulty(currentIndex, lastAnswer.recommendedNextDifficulty);
+    }
+  }
+
   if (currentIndex < currentInterview.questions.length - 1) {
     currentIndex += 1;
     showQuestion();
@@ -1153,11 +1197,45 @@ Object.assign(uiText.he, cleanHebrewText, {
   saveAnswer: "שמור תשובה",
   showHint: "הצג רמז",
   reset: "איפוס",
+  evaluatingAnswer: "GPT מעריך את התשובה...",
+  evaluationUnavailable: "נעשה שימוש בניקוד אוטומטי כי הערכת ה-AI לא הייתה זמינה.",
+  strengthsLabel: "חוזקות",
+  missingPointsLabel: "נקודות חסרות",
+  followUpBadge: "שאלת המשך",
+  difficultyEasy: "קל",
+  difficultyMedium: "בינוני",
+  difficultyHard: "קשה",
+  summaryTitle: "סיכום ביצועים",
+  improvementAreasLabel: "נושאים לשיפור",
+  repeatedMistakesLabel: "טעויות שחזרו על עצמן",
+  learningRecommendationsLabel: "המלצות ללמידה",
+  roleFitLabel: "התאמה לתפקיד",
+  passRecommendationLabel: "המלצה",
+  passAdvance: "מומלץ להתקדם לשלב הבא",
+  passBorderline: "גבולי — תלוי בשיקולים נוספים",
+  passDoNotAdvance: "לא מומלץ להתקדם בשלב זה",
 });
 Object.assign(uiText.en, {
   saveAnswer: "Save answer",
   showHint: "Show hint",
   reset: "Reset",
+  evaluatingAnswer: "GPT is evaluating your answer...",
+  evaluationUnavailable: "Automatic scoring was used because AI evaluation was unavailable.",
+  strengthsLabel: "Strengths",
+  missingPointsLabel: "Missing points",
+  followUpBadge: "Follow-up",
+  difficultyEasy: "Easy",
+  difficultyMedium: "Medium",
+  difficultyHard: "Hard",
+  summaryTitle: "Performance Summary",
+  improvementAreasLabel: "Areas to improve",
+  repeatedMistakesLabel: "Repeated mistakes",
+  learningRecommendationsLabel: "Learning recommendations",
+  roleFitLabel: "Role fit",
+  passRecommendationLabel: "Recommendation",
+  passAdvance: "Recommended to advance to the next stage",
+  passBorderline: "Borderline — depends on other considerations",
+  passDoNotAdvance: "Not recommended to advance at this stage",
 });
 
 const cleanHebrewQuestions = {
@@ -1386,29 +1464,95 @@ function getSuggestedAnswer(question, language) {
   return guides[topic] || guides.personal;
 }
 
-function evaluateAnswer() {
+async function evaluateAnswer() {
   if (currentInterview.answers[currentIndex]) return;
 
   const question = currentInterview.questions[currentIndex];
-  const userAnswer = answer.value.trim().toLowerCase();
-  const matchedKeywords = question.keywords.filter((keyword) => userAnswer.includes(keyword.toLowerCase()));
-  const missingKeywords = question.keywords.filter((keyword) => !matchedKeywords.includes(keyword));
-  const score = getQuestionScore(userAnswer, matchedKeywords.length, question.keywords.length);
+  const userAnswerText = answer.value.trim();
+  const text = uiText[currentInterview.language] || uiText.he;
+  const difficulty = question.difficulty || "medium";
 
-  currentInterview.score += score;
-  currentInterview.answers[currentIndex] = {
-    question: question.question,
-    answer: answer.value.trim(),
-    score,
-    matchedKeywords,
-    missingKeywords,
-    suggestedAnswer: getSuggestedAnswer(question, currentInterview.language),
-  };
-
-  feedback.className = "feedback hidden";
-  feedback.textContent = "";
   submitAnswer.disabled = true;
-  nextQuestion.disabled = false;
+  const originalSubmitText = submitAnswer.textContent;
+  submitAnswer.textContent = text.evaluatingAnswer;
+
+  try {
+    const evaluation = await apiRequest("/api/ai/evaluate-answer", {
+      method: "POST",
+      body: JSON.stringify({
+        role: currentInterview.role,
+        roleLabel: currentInterview.roleLabel,
+        level: currentInterview.level,
+        language: currentInterview.language,
+        topic: question.topic,
+        question: question.question,
+        answer: userAnswerText,
+        difficulty,
+        history: currentInterview.difficultyHistory,
+      }),
+    });
+
+    currentInterview.score += evaluation.score;
+    currentInterview.answers[currentIndex] = {
+      question: question.question,
+      answer: userAnswerText,
+      topic: question.topic,
+      difficulty,
+      ...evaluation,
+    };
+    currentInterview.difficultyHistory.push({
+      topic: question.topic,
+      question: question.question,
+      answerLevel: evaluation.answerLevel,
+      difficulty,
+    });
+    currentInterview.pendingFollowUp = evaluation.shouldAskFollowUp ? evaluation.followUpQuestion : null;
+
+    renderFeedback(evaluation);
+  } catch (error) {
+    console.warn("Per-answer GPT evaluation is unavailable; using local scoring.", error);
+
+    const lowerAnswer = userAnswerText.toLowerCase();
+    const matchedKeywords = question.keywords.filter((keyword) => lowerAnswer.includes(keyword.toLowerCase()));
+    const localScore = getQuestionScore(lowerAnswer, matchedKeywords.length, question.keywords.length) * 50;
+    const fallbackEvaluation = {
+      score: localScore,
+      correctnessScore: localScore,
+      relevanceScore: localScore,
+      depthScore: localScore,
+      clarityScore: localScore,
+      strengths: [],
+      mistakes: [],
+      missingPoints: [],
+      feedback: text.evaluationUnavailable,
+      improvedAnswer: "",
+      answerLevel: localScore >= 100 ? "strong" : localScore >= 50 ? "partial" : "weak",
+      recommendedNextDifficulty: difficulty,
+      shouldAskFollowUp: false,
+      followUpQuestion: null,
+    };
+
+    currentInterview.score += localScore;
+    currentInterview.answers[currentIndex] = {
+      question: question.question,
+      answer: userAnswerText,
+      topic: question.topic,
+      difficulty,
+      ...fallbackEvaluation,
+    };
+    currentInterview.difficultyHistory.push({
+      topic: question.topic,
+      question: question.question,
+      answerLevel: fallbackEvaluation.answerLevel,
+      difficulty,
+    });
+    currentInterview.pendingFollowUp = null;
+
+    renderFeedback(fallbackEvaluation);
+  } finally {
+    submitAnswer.textContent = originalSubmitText;
+    nextQuestion.disabled = false;
+  }
 }
 
 function renderFinalSummary(timeExpired, maxScore) {
@@ -1418,6 +1562,7 @@ function renderFinalSummary(timeExpired, maxScore) {
   }
   const language = currentInterview.language;
   const isHebrew = language === "he";
+  const text = uiText[language] || uiText.he;
   const title = timeExpired ? (isHebrew ? "הזמן נגמר" : "Time is up") : (isHebrew ? "הראיון הסתיים" : "Interview completed");
   const subtitle = isHebrew
     ? `ציון: ${currentInterview.score} מתוך ${maxScore}. הפידבק מופיע כאן בסוף כדי שתוכל לתרגל בלי הפרעות באמצע.`
@@ -1427,6 +1572,7 @@ function renderFinalSummary(timeExpired, maxScore) {
   const missingTitle = isHebrew ? "מה כדאי להוסיף" : "What to add";
   const emptyValue = isHebrew ? "לא זוהה" : "Not detected";
   const feedbackTitle = isHebrew ? "הערות כלליות" : "Overall Feedback";
+  const perQuestionMax = currentInterview.questions.length ? Math.round(maxScore / currentInterview.questions.length) : maxScore;
 
   const cards = currentInterview.questions
     .map((question, index) => {
@@ -1435,25 +1581,35 @@ function renderFinalSummary(timeExpired, maxScore) {
         matchedKeywords: [],
         missingKeywords: question.keywords,
         suggestedAnswer: getSuggestedAnswer(question, language),
-        feedback: ""
+        feedback: "",
       };
+      const isRich = typeof result.answerLevel === "string";
 
       const feedbackHtml = result.feedback
         ? `<div class="answer-feedback"><strong>${isHebrew ? "הערה" : "Note"}:</strong> <p>${escapeHtml(result.feedback)}</p></div>`
         : "";
 
+      const detailsHtml = isRich
+        ? `
+          <p><strong>${text.strengthsLabel}:</strong> ${(result.strengths || []).length ? escapeHtml(result.strengths.join(", ")) : emptyValue}</p>
+          <p><strong>${text.missingPointsLabel}:</strong> ${(result.missingPoints || []).length ? escapeHtml(result.missingPoints.join(", ")) : (isHebrew ? "כיסית את העיקר" : "You covered the core")}</p>
+        `
+        : `
+          <p><strong>${detectedTitle}:</strong> ${(result.matchedKeywords || []).length ? escapeHtml(result.matchedKeywords.join(", ")) : emptyValue}</p>
+          <p><strong>${missingTitle}:</strong> ${(result.missingKeywords || []).length ? escapeHtml(result.missingKeywords.slice(0, 8).join(", ")) : (isHebrew ? "כיסית את העיקר" : "You covered the core")}</p>
+        `;
+
       return `
         <article class="summary-card">
           <div class="summary-card-header">
             <span>${isHebrew ? "שאלה" : "Question"} ${index + 1}</span>
-            <strong>${result.score}/2</strong>
+            <strong>${result.score}/${perQuestionMax}</strong>
           </div>
           <h3>${escapeHtml(question.question)}</h3>
-          <p><strong>${detectedTitle}:</strong> ${result.matchedKeywords.length ? escapeHtml(result.matchedKeywords.join(", ")) : emptyValue}</p>
-          <p><strong>${missingTitle}:</strong> ${result.missingKeywords.length ? escapeHtml(result.missingKeywords.slice(0, 8).join(", ")) : (isHebrew ? "כיסית את העיקר" : "You covered the core")}</p>
+          ${detailsHtml}
           <div class="answer-guide">
             <strong>${answerTitle}</strong>
-            <p>${escapeHtml(result.suggestedAnswer)}</p>
+            <p>${escapeHtml(result.suggestedAnswer || result.improvedAnswer || "")}</p>
           </div>
           ${feedbackHtml}
         </article>
@@ -1468,6 +1624,23 @@ function renderFinalSummary(timeExpired, maxScore) {
       </section>`
     : "";
 
+  const summary = currentInterview.summary;
+  const passLabels = { advance: text.passAdvance, borderline: text.passBorderline, do_not_advance: text.passDoNotAdvance };
+  const listBlock = (label, items) =>
+    items && items.length ? `<p><strong>${label}:</strong> ${escapeHtml(items.join(", "))}</p>` : "";
+
+  const summaryHtml = summary
+    ? `<section class="final-analysis" dir="${isHebrew ? "rtl" : "ltr"}">
+        <h3>${text.summaryTitle}</h3>
+        ${listBlock(text.strengthsLabel, summary.strengths)}
+        ${listBlock(text.improvementAreasLabel, summary.improvementAreas)}
+        ${listBlock(text.repeatedMistakesLabel, (summary.repeatedMistakes || []).map((item) => `${item.mistake} (${item.occurrences}x)`))}
+        ${listBlock(text.learningRecommendationsLabel, summary.learningRecommendations)}
+        ${summary.roleFit ? `<p><strong>${text.roleFitLabel}:</strong> ${escapeHtml(summary.roleFit)}</p>` : ""}
+        ${summary.passRecommendation ? `<p><strong>${text.passRecommendationLabel}:</strong> ${escapeHtml(passLabels[summary.passRecommendation] || summary.passRecommendation)}</p>` : ""}
+      </section>`
+    : "";
+
   emptyState.innerHTML = `
     <section class="final-summary" dir="${isHebrew ? "rtl" : "ltr"}">
       <div class="final-summary-header">
@@ -1476,6 +1649,7 @@ function renderFinalSummary(timeExpired, maxScore) {
         <p>${subtitle}</p>
       </div>
       ${overallFeedbackHtml}
+      ${summaryHtml}
       <div class="summary-grid">${cards}</div>
     </section>
   `;
@@ -1519,7 +1693,7 @@ function buildInterviewExportData() {
     language: currentInterview.language,
     interviewMinutes: currentInterview.interviewMinutes,
     score: currentInterview.score,
-    maxScore: currentInterview.questions.length * 2,
+    maxScore: currentInterview.maxScore || currentInterview.questions.length * 2,
     overallFeedback: currentInterview.overallFeedback || "",
     questions: answers,
   };
@@ -1662,17 +1836,58 @@ async function applyGptEvaluation() {
   currentInterview.overallFeedback = evaluation.overallFeedback;
 }
 
+function hasRichEvaluation(answerEntry) {
+  return Boolean(answerEntry && typeof answerEntry.score === "number" && typeof answerEntry.answerLevel === "string");
+}
+
+async function applyInterviewSummary() {
+  const evaluatedAnswers = currentInterview.questions.map((question, index) => {
+    const item = currentInterview.answers[index] || {};
+    return {
+      topic: item.topic || question.topic || "",
+      difficulty: item.difficulty || question.difficulty || "medium",
+      score: item.score || 0,
+      answerLevel: item.answerLevel || "weak",
+      strengths: item.strengths || [],
+      mistakes: item.mistakes || [],
+      missingPoints: item.missingPoints || [],
+    };
+  });
+
+  const summary = await apiRequest("/api/ai/summarize", {
+    method: "POST",
+    body: JSON.stringify({
+      role: currentInterview.role,
+      roleLabel: currentInterview.roleLabel,
+      level: currentInterview.level,
+      language: currentInterview.language,
+      evaluatedAnswers,
+    }),
+  });
+
+  currentInterview.score = currentInterview.answers.reduce((total, item) => total + (item?.score || 0), 0);
+  currentInterview.summary = summary;
+  currentInterview.overallFeedback = summary.overallFeedback;
+}
+
 async function finishInterview(timeExpired) {
   clearInterval(timerId);
   const text = uiText[currentInterview.language] || uiText.he;
 
+  const allRichlyEvaluated = currentInterview.questions.every((_, index) => hasRichEvaluation(currentInterview.answers[index]));
+
   try {
-    await applyGptEvaluation();
+    if (allRichlyEvaluated) {
+      await applyInterviewSummary();
+    } else {
+      await applyGptEvaluation();
+    }
   } catch (error) {
-    console.error("GPT evaluation failed; using the local score.", error);
+    console.error("GPT summary/evaluation failed; using the locally tracked score.", error);
   }
 
-  const maxScore = currentInterview.questions.length * 2;
+  const maxScore = allRichlyEvaluated ? currentInterview.questions.length * 100 : currentInterview.questions.length * 2;
+  currentInterview.maxScore = maxScore;
 
   try {
     await apiRequest(`/api/interviews/${currentInterview.id}/finish`, {
@@ -1682,6 +1897,7 @@ async function finishInterview(timeExpired) {
         maxScore,
         overallFeedback: currentInterview.overallFeedback || "",
         answers: currentInterview.answers,
+        summary: currentInterview.summary || {},
       }),
     });
   } catch (error) {
@@ -1734,7 +1950,10 @@ function getQuestions(role, level, count, profile, language) {
   const behaviorQuestions = buildBehaviorQuestions(roleConfig, level, profile, language, insights);
   const personalQuestions = buildPersonalQuestions(roleConfig, level, profile, language, insights);
   const exactMatches = questionBank.filter((item) => roleConfig.topics.includes(item.topic));
-  const allQuestions = [...behaviorQuestions, ...personalQuestions, ...shuffle(exactMatches)].map((question) => localizeQuestion(question, language));
+  const allQuestions = [...behaviorQuestions, ...personalQuestions, ...shuffle(exactMatches)].map((question) => ({
+    ...localizeQuestion(question, language),
+    difficulty: question.difficulty || "medium",
+  }));
   const uniqueQuestions = [];
   const seen = new Set();
 
