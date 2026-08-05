@@ -50,6 +50,17 @@ async function initDatabase() {
       completed_at TIMESTAMPTZ
     )
   `);
+
+  // CREATE TABLE IF NOT EXISTS above doesn't add columns to a table that already exists
+  // from an older version of this schema, so backfill any that are missing.
+  await db.query(`
+    ALTER TABLE interviews
+      ADD COLUMN IF NOT EXISTS candidate_name TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS candidate_id TEXT NOT NULL DEFAULT '',
+      ADD COLUMN IF NOT EXISTS previous_score INTEGER DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS improvement_score INTEGER DEFAULT NULL,
+      ADD COLUMN IF NOT EXISTS overall_feedback TEXT DEFAULT ''
+  `);
 }
 
 function sendJson(response, statusCode, data) {
@@ -193,9 +204,18 @@ async function handleApi(request, response, url) {
     const overallFeedback = String(body.overallFeedback || "");
     const answers = Array.isArray(body.answers) ? body.answers : [];
 
-    // Get previous score to calculate improvement
+    // Get the same candidate's most recent other completed interview for the same role,
+    // matched by candidate_id (falls back to candidate_name client-side, see frontend/app.js).
     const prevResult = await db.query(
-      "SELECT score FROM interviews WHERE id = $1 AND status = 'completed'",
+      `
+      SELECT score FROM interviews
+      WHERE candidate_id = (SELECT candidate_id FROM interviews WHERE id = $1)
+        AND role = (SELECT role FROM interviews WHERE id = $1)
+        AND status = 'completed'
+        AND id != $1
+      ORDER BY completed_at DESC
+      LIMIT 1
+      `,
       [id],
     );
     const previousScore = prevResult.rows.length > 0 ? prevResult.rows[0].score : null;
