@@ -1,0 +1,69 @@
+/* Baseline theme only -- reuses the existing app's color tokens for visual continuity during
+   the migration. A dedicated design pass (spacing system, typography, components) is Phase 8,
+   not this one. */
+:root {
+  color-scheme: dark;
+  --bg: #061024;
+  --panel: rgba(12, 24, 48, 0.72);
+  --panel-soft: rgba(18, 33, 63, 0.62);
+  --text: #f7f9ff;
+  --muted: #a9b5ce;
+  --border: rgba(148, 163, 184, 0.22);
+  --blue: #2f7cff;
+  --violet: #8b4dff;
+  --green: #35d399;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+a {
+  color: inherit;
+}
+
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: none;
+  border-radius: 10px;
+  padding: 12px 22px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.button-primary {
+  background: linear-gradient(135deg, var(--blue), var(--violet));
+  color: #fff;
+}
+
+.button-secondary {
+  background: var(--panel-soft);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
