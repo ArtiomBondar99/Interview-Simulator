@@ -37,7 +37,10 @@ async function post(path, body) {
 test("POST /api/ai/evaluate-answer returns 400 when question/answer are missing", async () => {
   const { status, body } = await post("/api/ai/evaluate-answer", {});
   assert.equal(status, 400);
-  assert.equal(body.error, "question and answer are required.");
+  assert.equal(body.error.code, "VALIDATION_ERROR");
+  assert.equal(body.error.message, "Invalid request.");
+  assert.ok(body.error.details.some((issue) => issue.path === "question"));
+  assert.ok(body.error.details.some((issue) => issue.path === "answer"));
 });
 
 test("POST /api/ai/evaluate-answer returns 503 with a generic message when OPENAI_API_KEY is unset", async () => {
@@ -60,5 +63,6 @@ test("POST /api/ai/evaluate-answer returns 503 with a generic message when OPENA
 test("POST /api/ai/summarize returns 400 when evaluatedAnswers is empty", async () => {
   const { status, body } = await post("/api/ai/summarize", { evaluatedAnswers: [] });
   assert.equal(status, 400);
-  assert.equal(body.error, "At least one evaluated answer is required.");
+  assert.equal(body.error.code, "VALIDATION_ERROR");
+  assert.ok(body.error.details.some((issue) => issue.path === "evaluatedAnswers"));
 });

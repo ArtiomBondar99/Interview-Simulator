@@ -1,6 +1,30 @@
 const { db } = require("../config/db");
 
+// How long past an interview's own configured duration we wait before treating an
+// in_progress row as abandoned (e.g. the user closed the tab before the timer could
+// auto-finish it). Generous on purpose — this only affects stale housekeeping, not anything
+// time-sensitive for an active session.
+const ABANDON_GRACE_MINUTES = 30;
+
+// No cron/job runner exists in this project, so instead of a background sweep, this runs
+// opportunistically at the top of every read path that surfaces `status` to a client
+// (listInterviews, getInterviewById) — cheap (a single indexed-ish UPDATE touching only
+// in_progress rows) and keeps whatever the caller sees next always accurate.
+async function abandonStaleInterviews() {
+  await db.query(
+    `
+    UPDATE interviews
+    SET status = 'abandoned'
+    WHERE status = 'in_progress'
+      AND started_at < NOW() - ((interview_minutes + $1) * INTERVAL '1 minute')
+    `,
+    [ABANDON_GRACE_MINUTES],
+  );
+}
+
 async function listInterviews() {
+  await abandonStaleInterviews();
+
   const result = await db.query(`
       SELECT id::text, candidate_name AS "candidateName", candidate_id AS "candidateId",
              topic, role, level, question_count AS "questionCount",
@@ -18,6 +42,8 @@ async function listInterviews() {
 }
 
 async function getInterviewById(id) {
+  await abandonStaleInterviews();
+
   const result = await db.query(
     `
       SELECT id::text, candidate_name AS "candidateName", candidate_id AS "candidateId",
@@ -105,14 +131,19 @@ async function finishInterview(id, { score, maxScore, overallFeedback, answers, 
 
     if (currentResult.rows.length === 0) {
       await client.query("ROLLBACK");
-      return { found: false, alreadyCompleted: false };
+      return { found: false, alreadyCompleted: false, abandoned: false };
     }
 
     const current = currentResult.rows[0];
 
     if (current.status === "completed") {
       await client.query("ROLLBACK");
-      return { found: true, alreadyCompleted: true };
+      return { found: true, alreadyCompleted: true, abandoned: false };
+    }
+
+    if (current.status === "abandoned") {
+      await client.query("ROLLBACK");
+      return { found: true, alreadyCompleted: false, abandoned: true };
     }
 
     await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`${current.candidate_id}:${current.role}`]);
@@ -141,8 +172,53 @@ async function finishInterview(id, { score, maxScore, overallFeedback, answers, 
       [score, maxScore, JSON.stringify(answers), overallFeedback, previousScore, improvementScore, JSON.stringify(summary), id],
     );
 
+    // Also write a normalized copy into questions/answers, in the same transaction, so it's
+    // never possible for the JSONB snapshot above and the relational tables to disagree.
+    // Only entries that are actually answered objects get a row -- a question the candidate
+    // never reached (e.g. the timer ran out) arrives here as `null` (JSON has no concept of a
+    // sparse-array "hole"), and we have no question text for it at all since /finish is the
+    // only place the backend ever sees question data (see migrations/005's comment).
+    const answeredItems = (Array.isArray(answers) ? answers : []).filter(
+      (item) => item && typeof item === "object" && item.question,
+    );
+
+    for (let position = 0; position < answeredItems.length; position += 1) {
+      const item = answeredItems[position];
+
+      const questionResult = await client.query(
+        `INSERT INTO questions (interview_id, position, topic, question, difficulty) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [id, position, String(item.topic || ""), String(item.question || ""), item.difficulty || null],
+      );
+      const questionId = questionResult.rows[0].id;
+
+      await client.query(
+        `
+        INSERT INTO answers (
+          question_id, answer_text, score, correctness_score, relevance_score, depth_score,
+          clarity_score, answer_level, strengths, mistakes, missing_points, feedback, improved_answer
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13)
+        `,
+        [
+          questionId,
+          String(item.answer || ""),
+          Number.isFinite(item.score) ? item.score : null,
+          Number.isFinite(item.correctnessScore) ? item.correctnessScore : null,
+          Number.isFinite(item.relevanceScore) ? item.relevanceScore : null,
+          Number.isFinite(item.depthScore) ? item.depthScore : null,
+          Number.isFinite(item.clarityScore) ? item.clarityScore : null,
+          item.answerLevel || null,
+          JSON.stringify(Array.isArray(item.strengths) ? item.strengths : []),
+          JSON.stringify(Array.isArray(item.mistakes) ? item.mistakes : []),
+          JSON.stringify(Array.isArray(item.missingPoints) ? item.missingPoints : []),
+          String(item.feedback || ""),
+          String(item.improvedAnswer || ""),
+        ],
+      );
+    }
+
     await client.query("COMMIT");
-    return { found: true, alreadyCompleted: false };
+    return { found: true, alreadyCompleted: false, abandoned: false };
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
@@ -152,7 +228,12 @@ async function finishInterview(id, { score, maxScore, overallFeedback, answers, 
 }
 
 async function deleteAllInterviews() {
-  await db.query("TRUNCATE TABLE interviews RESTART IDENTITY");
+  // CASCADE is required now that questions/answers hold foreign keys pointing at interviews --
+  // without it, PostgreSQL refuses to truncate a table referenced by another table's foreign
+  // key at all (a schema-level restriction, not a data-level one: it applies even when
+  // questions/answers happen to be empty). CASCADE also truncates and resets identities on
+  // both of them, which is exactly the "wipe everything" behavior this endpoint promises.
+  await db.query("TRUNCATE TABLE interviews RESTART IDENTITY CASCADE");
 }
 
 module.exports = { listInterviews, getInterviewById, createInterview, finishInterview, deleteAllInterviews };

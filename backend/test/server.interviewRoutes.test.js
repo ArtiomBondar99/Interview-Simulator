@@ -47,12 +47,22 @@ async function patch(path, body) {
   return { status: response.status, body: await response.json() };
 }
 
-test("GET /api/interviews/:id returns the interview that was just created", async () => {
-  const created = await post("/api/interviews/start", {
+// candidateName and userProfile are required by StartInterviewSchema (they're already required
+// client-side in frontend/app.js before a request is ever sent — see validation/interview.schemas.js).
+function startPayload(overrides = {}) {
+  return {
+    candidateName: "Test Candidate",
+    userProfile: "A few years of backend experience.",
+    role: "backend",
     topic: "Backend",
     level: "junior",
     questionCount: 3,
-  });
+    ...overrides,
+  };
+}
+
+test("GET /api/interviews/:id returns the interview that was just created", async () => {
+  const created = await post("/api/interviews/start", startPayload());
   assert.equal(created.status, 201);
 
   const { status, body } = await get(`/api/interviews/${created.body.id}`);
@@ -66,35 +76,25 @@ test("GET /api/interviews/:id returns the interview that was just created", asyn
 test("GET /api/interviews/:id returns 404 for an id that does not exist", async () => {
   const { status, body } = await get("/api/interviews/999999999");
   assert.equal(status, 404);
-  assert.equal(body.error, "Interview not found.");
+  assert.equal(body.error.code, "INTERVIEW_NOT_FOUND");
+  assert.equal(body.error.message, "Interview not found.");
 });
 
 test("GET /api/interviews/:id returns 404 (API route not found) for a non-numeric id", async () => {
   const { status, body } = await get("/api/interviews/not-a-number");
   assert.equal(status, 404);
-  assert.equal(body.error, "API route not found.");
+  assert.equal(body.error.code, "ROUTE_NOT_FOUND");
+  assert.equal(body.error.message, "API route not found.");
 });
 
 test("finishInterview computes improvementScore from the candidate's previous completed interview for the same role", async () => {
   const candidateId = `race-cand-${Date.now()}`;
 
-  const first = await post("/api/interviews/start", {
-    candidateId,
-    role: "Backend Developer",
-    topic: "Backend",
-    level: "junior",
-    questionCount: 2,
-  });
+  const first = await post("/api/interviews/start", startPayload({ candidateId, role: "Backend Developer", questionCount: 2 }));
   const firstFinish = await patch(`/api/interviews/${first.body.id}/finish`, { score: 10, maxScore: 20, answers: [] });
   assert.equal(firstFinish.status, 200);
 
-  const second = await post("/api/interviews/start", {
-    candidateId,
-    role: "Backend Developer",
-    topic: "Backend",
-    level: "junior",
-    questionCount: 2,
-  });
+  const second = await post("/api/interviews/start", startPayload({ candidateId, role: "Backend Developer", questionCount: 2 }));
   const secondFinish = await patch(`/api/interviews/${second.body.id}/finish`, { score: 16, maxScore: 20, answers: [] });
   assert.equal(secondFinish.status, 200);
 
@@ -104,7 +104,7 @@ test("finishInterview computes improvementScore from the candidate's previous co
 });
 
 test("finishing an already-completed interview returns 409 and does not overwrite its data", async () => {
-  const created = await post("/api/interviews/start", { topic: "Backend", level: "junior", questionCount: 2 });
+  const created = await post("/api/interviews/start", startPayload());
   const id = created.body.id;
 
   const first = await patch(`/api/interviews/${id}/finish`, { score: 10, maxScore: 20, answers: [] });
@@ -112,14 +112,15 @@ test("finishing an already-completed interview returns 409 and does not overwrit
 
   const second = await patch(`/api/interviews/${id}/finish`, { score: 999, maxScore: 999, answers: [] });
   assert.equal(second.status, 409);
-  assert.equal(second.body.error, "Interview is already completed.");
+  assert.equal(second.body.error.code, "INTERVIEW_ALREADY_COMPLETED");
+  assert.equal(second.body.error.message, "Interview is already completed.");
 
   const fetched = await get(`/api/interviews/${id}`);
   assert.equal(fetched.body.score, 10);
 });
 
 test("two concurrent finish requests for the same interview apply exactly once", async () => {
-  const created = await post("/api/interviews/start", { topic: "Backend", level: "junior", questionCount: 2 });
+  const created = await post("/api/interviews/start", startPayload());
   const id = created.body.id;
 
   const [a, b] = await Promise.all([

@@ -1,4 +1,5 @@
 const interviewService = require("../services/interview.service");
+const { AppError } = require("../utils/errors");
 
 const DELETE_ALL_CONFIRMATION = "DELETE_ALL_INTERVIEWS";
 
@@ -13,12 +14,11 @@ async function getInterviews(req, res, next) {
 
 async function getInterviewById(req, res, next) {
   try {
-    const id = Number(req.params.id);
+    const { id } = req.params;
     const interview = await interviewService.getInterviewById(id);
 
     if (!interview) {
-      res.status(404).json({ error: "Interview not found." });
-      return;
+      throw new AppError("INTERVIEW_NOT_FOUND", "Interview not found.", 404);
     }
 
     res.status(200).json(interview);
@@ -29,36 +29,7 @@ async function getInterviewById(req, res, next) {
 
 async function startInterview(req, res, next) {
   try {
-    const body = req.body || {};
-    const candidateName = String(body.candidateName || "");
-    const candidateId = String(body.candidateId || "");
-    const topic = String(body.topic || "");
-    const role = String(body.role || topic);
-    const interviewLanguage = String(body.interviewLanguage || "he");
-    const level = String(body.level || "");
-    const userProfile = String(body.userProfile || "");
-    const profileSummary = String(body.profileSummary || "");
-    const questionCount = Number(body.questionCount || 0);
-    const interviewMinutes = Number(body.interviewMinutes || 10);
-
-    if (!topic || !level || !Number.isInteger(questionCount) || questionCount < 1) {
-      res.status(400).json({ error: "Missing role, level, or questionCount." });
-      return;
-    }
-
-    const id = await interviewService.createInterview({
-      candidateName,
-      candidateId,
-      topic,
-      role,
-      interviewLanguage,
-      level,
-      userProfile,
-      profileSummary,
-      questionCount,
-      interviewMinutes,
-    });
-
+    const id = await interviewService.createInterview(req.body);
     res.status(201).json({ id });
   } catch (error) {
     next(error);
@@ -67,30 +38,19 @@ async function startInterview(req, res, next) {
 
 async function finishInterview(req, res, next) {
   try {
-    const id = Number(req.params.id);
-    const body = req.body || {};
-    const score = Number(body.score || 0);
-    const maxScore = Number(body.maxScore || 0);
-    const overallFeedback = String(body.overallFeedback || "");
-    const answers = Array.isArray(body.answers) ? body.answers : [];
-    const summary = body.summary && typeof body.summary === "object" ? body.summary : {};
-
-    const result = await interviewService.finishInterview(id, {
-      score,
-      maxScore,
-      overallFeedback,
-      answers,
-      summary,
-    });
+    const { id } = req.params;
+    const result = await interviewService.finishInterview(id, req.body);
 
     if (!result.found) {
-      res.status(404).json({ error: "Interview not found." });
-      return;
+      throw new AppError("INTERVIEW_NOT_FOUND", "Interview not found.", 404);
     }
 
     if (result.alreadyCompleted) {
-      res.status(409).json({ error: "Interview is already completed." });
-      return;
+      throw new AppError("INTERVIEW_ALREADY_COMPLETED", "Interview is already completed.", 409);
+    }
+
+    if (result.abandoned) {
+      throw new AppError("INTERVIEW_ABANDONED", "Interview was abandoned and can no longer be finished.", 409);
     }
 
     res.status(200).json({ ok: true });
@@ -104,10 +64,11 @@ async function deleteAllInterviews(req, res, next) {
     const confirm = (req.body && req.body.confirm) || req.query.confirm;
 
     if (confirm !== DELETE_ALL_CONFIRMATION) {
-      res.status(400).json({
-        error: `Confirmation required. Send { "confirm": "${DELETE_ALL_CONFIRMATION}" } in the request body.`,
-      });
-      return;
+      throw new AppError(
+        "VALIDATION_ERROR",
+        `Confirmation required. Send { "confirm": "${DELETE_ALL_CONFIRMATION}" } in the request body.`,
+        400,
+      );
     }
 
     await interviewService.deleteAllInterviews();

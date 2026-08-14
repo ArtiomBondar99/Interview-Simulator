@@ -35,6 +35,9 @@ const InterviewQuestion = z.object({
 });
 
 const InterviewQuestions = z.object({
+  // The planned topic sequence -- one entry per question, same order. Keeps the interview from
+  // randomly jumping between unrelated areas (see generateInterviewQuestions' system prompt).
+  blueprint: z.array(z.string()).min(1).max(20),
   questions: z.array(InterviewQuestion).min(1).max(20),
 });
 
@@ -128,6 +131,14 @@ async function generateInterviewQuestions({
 }) {
   const systemPrompt = [
     "You create realistic job interview questions for an interview simulator.",
+    "First plan an interview blueprint: an ordered list of exactly questionCount distinct topics",
+    "appropriate for the role and seniority (for example, for a junior backend role: JavaScript",
+    "fundamentals, Node.js, REST APIs, databases, debugging, basic architecture). Order the",
+    "blueprint so consecutive topics form a sensible progression -- never place two unrelated",
+    "topics back to back for no reason, the way a real interviewer plans a session in advance.",
+    "Then write exactly one question per blueprint topic, in the same order, so the interview",
+    "never randomly jumps between unrelated areas. Each question's own topic field must match its",
+    "corresponding blueprint entry.",
     "Return exactly the requested number of distinct questions in the requested language.",
     "Match the role and seniority. Mix technical depth, practical scenarios, tradeoffs, debugging, and experience-based questions.",
     "Each hint must help without revealing a full answer. Keywords must be short concepts useful for evaluating an answer.",
@@ -166,7 +177,12 @@ async function generateInterviewQuestions({
     throw new AppError("AI_INVALID_RESPONSE", "OpenAI returned an unexpected number of questions.", 502);
   }
 
-  return { questions, model: MODEL };
+  const blueprint = parsed?.blueprint;
+  if (!blueprint || blueprint.length !== questions.length) {
+    throw new AppError("AI_INVALID_RESPONSE", "OpenAI returned a blueprint that doesn't match the questions.", 502);
+  }
+
+  return { questions, blueprint, model: MODEL };
 }
 
 async function evaluateInterview({ role, level, language, answers }) {
