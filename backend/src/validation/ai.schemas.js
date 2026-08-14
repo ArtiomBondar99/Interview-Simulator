@@ -60,6 +60,10 @@ const EvaluateAnswerSchema = z
     answer: z.string().trim().min(1, "question and answer are required.").max(6000),
     difficulty: z.string().optional(),
     history: z.array(HistoryItemSchema).optional().default([]),
+    // Sanity ceiling only (garbage-input protection) -- the actual product-level follow-up cap
+    // (MAX_CONSECUTIVE_FOLLOW_UPS = 2) is enforced in ai.service.js, not here. Don't conflate
+    // the two numbers.
+    consecutiveFollowUps: z.coerce.number().int().min(0).max(20).optional().default(0),
   })
   .transform((data) => ({
     role: data.role || "general-tech",
@@ -71,6 +75,9 @@ const EvaluateAnswerSchema = z
     answer: data.answer,
     difficulty: ["easy", "medium", "hard"].includes(data.difficulty) ? data.difficulty : "medium",
     history: data.history.slice(-3),
+    // This transform rebuilds the object as an allow-list (not a spread) -- a field only added
+    // to the raw shape above would be silently dropped if not also re-listed here.
+    consecutiveFollowUps: data.consecutiveFollowUps,
   }));
 
 const EvaluatedAnswerInputSchema = z.object({
@@ -81,6 +88,7 @@ const EvaluatedAnswerInputSchema = z.object({
   strengths: z.array(z.string()).max(6).optional().default([]),
   mistakes: z.array(z.string()).max(6).optional().default([]),
   missingPoints: z.array(z.string()).max(6).optional().default([]),
+  misconceptions: z.array(z.string()).max(6).optional().default([]),
 });
 
 const SummarizeSchema = z

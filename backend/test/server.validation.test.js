@@ -106,6 +106,28 @@ test("DELETE /api/interviews rejects a missing/incorrect confirm token with VALI
   assert.equal(body.error.code, "VALIDATION_ERROR");
 });
 
+test("POST /api/ai/evaluate-answer coerces a numeric-looking string consecutiveFollowUps", async () => {
+  const { status } = await post("/api/ai/evaluate-answer", {
+    question: "What is an index?",
+    answer: "Speeds up lookups.",
+    consecutiveFollowUps: "1",
+  });
+  // No OPENAI_API_KEY is configured in this dev environment (same as every other AI test in
+  // this suite) -- what matters here is that validation accepted the coerced value (not a 400),
+  // regardless of whether the AI call itself then succeeds or cleanly fails as unconfigured.
+  assert.ok(status === 503 || status === 200);
+});
+
+test("POST /api/ai/evaluate-answer rejects a negative consecutiveFollowUps with VALIDATION_ERROR", async () => {
+  const { status, body } = await post("/api/ai/evaluate-answer", {
+    question: "What is an index?",
+    answer: "Speeds up lookups.",
+    consecutiveFollowUps: -1,
+  });
+  assert.equal(status, 400);
+  assert.equal(body.error.code, "VALIDATION_ERROR");
+});
+
 test("a malformed JSON request body returns a clean VALIDATION_ERROR, not a raw parser message", async () => {
   const { status, body } = await postRaw("/api/interviews/start", "{ this is not json");
   assert.equal(status, 400);

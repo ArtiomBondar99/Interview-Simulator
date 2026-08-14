@@ -218,7 +218,13 @@ test("invalid JSON / schema-non-conformance from the model falls back to a gener
 
 test("AnswerEvaluation schema enforces followUpQuestion iff shouldAskFollowUp", () => {
   const { AnswerEvaluation } = ai.__schemas;
-  const valid = { score: 50, correctnessScore: 50, relevanceScore: 50, depthScore: 50, clarityScore: 50, strengths: [], mistakes: [], missingPoints: [], feedback: "x", improvedAnswer: "", answerLevel: "partial", recommendedNextDifficulty: "medium", shouldAskFollowUp: true, followUpQuestion: "What about X?" };
+  const valid = {
+    score: 50, correctnessScore: 50, relevanceScore: 50, depthScore: 50, clarityScore: 50,
+    strengths: [], mistakes: [], misconceptions: [], missingPoints: [],
+    feedback: "x", interviewerReaction: "Okay.", improvedAnswer: "",
+    answerLevel: "partial", answerQualityLabel: "Partially answered", recommendedNextDifficulty: "medium",
+    shouldAskFollowUp: true, followUpQuestion: "What about X?",
+  };
   assert.equal(AnswerEvaluation.safeParse(valid).success, true);
 
   const invalidTrueWithNull = { ...valid, followUpQuestion: null };
@@ -226,4 +232,116 @@ test("AnswerEvaluation schema enforces followUpQuestion iff shouldAskFollowUp", 
 
   const invalidFalseWithText = { ...valid, shouldAskFollowUp: false, followUpQuestion: "Should be null" };
   assert.equal(AnswerEvaluation.safeParse(invalidFalseWithText).success, false);
+});
+
+test("AnswerEvaluation schema requires misconceptions/interviewerReaction/answerQualityLabel", () => {
+  const { AnswerEvaluation } = ai.__schemas;
+  const valid = {
+    score: 50, correctnessScore: 50, relevanceScore: 50, depthScore: 50, clarityScore: 50,
+    strengths: [], mistakes: [], misconceptions: [], missingPoints: [],
+    feedback: "x", interviewerReaction: "Okay.", improvedAnswer: "",
+    answerLevel: "partial", answerQualityLabel: "Partially answered", recommendedNextDifficulty: "medium",
+    shouldAskFollowUp: false, followUpQuestion: null,
+  };
+  assert.equal(AnswerEvaluation.safeParse(valid).success, true);
+
+  const { misconceptions, ...withoutMisconceptions } = valid;
+  assert.equal(AnswerEvaluation.safeParse(withoutMisconceptions).success, false);
+
+  const { interviewerReaction, ...withoutReaction } = valid;
+  assert.equal(AnswerEvaluation.safeParse(withoutReaction).success, false);
+
+  assert.equal(AnswerEvaluation.safeParse({ ...valid, answerQualityLabel: "Amazing" }).success, false);
+});
+
+function fullFixture(overrides = {}) {
+  return {
+    score: 70, correctnessScore: 70, relevanceScore: 70, depthScore: 70, clarityScore: 70,
+    strengths: [], mistakes: [], misconceptions: [], missingPoints: [],
+    feedback: "Detailed feedback for the report.", interviewerReaction: "Okay.", improvedAnswer: "",
+    answerLevel: "partial", answerQualityLabel: "Partially answered", recommendedNextDifficulty: "medium",
+    shouldAskFollowUp: true, followUpQuestion: "A grounded follow-up.",
+    ...overrides,
+  };
+}
+
+test("misconceptions are distinct from missingPoints/mistakes and pass through unmodified", async () => {
+  const fixture = fullFixture({ misconceptions: ["Believes JWTs are encrypted, not signed."] });
+  const { client } = fakeClient(fixture);
+  ai.__setClientForTests(client);
+
+  const result = await ai.evaluateCandidateAnswer(baseArgs());
+
+  assert.deepEqual(result.misconceptions, ["Believes JWTs are encrypted, not signed."]);
+});
+
+test("the prompt distinguishes misconceptions from missingPoints with the JWT worked example", async () => {
+  const { client, getCapturedMessages } = fakeClient(fullFixture());
+  ai.__setClientForTests(client);
+
+  await ai.evaluateCandidateAnswer(baseArgs());
+
+  const systemMessage = getCapturedMessages().find((m) => m.role === "system");
+  assert.ok(systemMessage.content.includes("JWT"));
+  assert.ok(systemMessage.content.includes("misconceptions"));
+});
+
+test("interviewerReaction passes through and the prompt keeps it distinct from feedback", async () => {
+  const fixture = fullFixture({ interviewerReaction: "Interesting — can you say more?" });
+  const { client, getCapturedMessages } = fakeClient(fixture);
+  ai.__setClientForTests(client);
+
+  const result = await ai.evaluateCandidateAnswer(baseArgs());
+
+  assert.equal(result.interviewerReaction, "Interesting — can you say more?");
+  const systemMessage = getCapturedMessages().find((m) => m.role === "system");
+  assert.ok(systemMessage.content.includes("interviewerReaction"));
+  assert.ok(systemMessage.content.includes("feedback"));
+});
+
+test("answerQualityLabel passes through", async () => {
+  const fixture = fullFixture({ answerQualityLabel: "Major knowledge gap" });
+  const { client } = fakeClient(fixture);
+  ai.__setClientForTests(client);
+
+  const result = await ai.evaluateCandidateAnswer(baseArgs());
+
+  assert.equal(result.answerQualityLabel, "Major knowledge gap");
+});
+
+test("below the follow-up cap, the model's shouldAskFollowUp/followUpQuestion pass through unmodified", async () => {
+  const fixture = fullFixture({ shouldAskFollowUp: true, followUpQuestion: "A real follow-up." });
+  const { client } = fakeClient(fixture);
+  ai.__setClientForTests(client);
+
+  const result = await ai.evaluateCandidateAnswer(baseArgs({ consecutiveFollowUps: 0 }));
+
+  assert.equal(result.shouldAskFollowUp, true);
+  assert.equal(result.followUpQuestion, "A real follow-up.");
+});
+
+test("at the follow-up cap, shouldAskFollowUp/followUpQuestion are forced off in code even if the model wants a follow-up", async () => {
+  const fixture = fullFixture({ shouldAskFollowUp: true, followUpQuestion: "The model still wants to ask this." });
+  const { client } = fakeClient(fixture);
+  ai.__setClientForTests(client);
+
+  const result = await ai.evaluateCandidateAnswer(baseArgs({ consecutiveFollowUps: ai.MAX_CONSECUTIVE_FOLLOW_UPS }));
+
+  assert.equal(result.shouldAskFollowUp, false);
+  assert.equal(result.followUpQuestion, null);
+});
+
+test("consecutiveFollowUps is included in the captured user payload and the prompt mentions the cap", async () => {
+  const { client, getCapturedMessages } = fakeClient(fullFixture({ shouldAskFollowUp: false, followUpQuestion: null }));
+  ai.__setClientForTests(client);
+
+  await ai.evaluateCandidateAnswer(baseArgs({ consecutiveFollowUps: 1 }));
+
+  const messages = getCapturedMessages();
+  const userMessage = messages.find((m) => m.role === "user");
+  const systemMessage = messages.find((m) => m.role === "system");
+  const userPayload = JSON.parse(userMessage.content);
+
+  assert.equal(userPayload.consecutiveFollowUps, 1);
+  assert.ok(systemMessage.content.includes(String(ai.MAX_CONSECUTIVE_FOLLOW_UPS)));
 });

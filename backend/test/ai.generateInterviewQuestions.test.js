@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test-key-placeholder";
 
 const ai = require("../src/services/ai.service");
+const { questionBank } = require("../src/data/questionBank");
 
 function fakeClient(parsedFixture) {
   let capturedMessages = null;
@@ -157,4 +158,54 @@ test("a blueprint that doesn't match the question count raises AI_INVALID_RESPON
       return true;
     },
   );
+});
+
+test("a mapped role includes real bank questions as referenceQuestions in the user payload", async () => {
+  const { client, getCapturedMessages } = fakeClient(questionFixture(2));
+  ai.__setClientForTests(client);
+
+  // "backend-node" maps to the backendNode domain; baseArgs' default level is "junior".
+  await ai.generateInterviewQuestions(baseArgs({ role: "backend-node", questionCount: 2 }));
+
+  const messages = getCapturedMessages();
+  const userPayload = JSON.parse(messages.find((m) => m.role === "user").content);
+  const systemMessage = messages.find((m) => m.role === "system");
+
+  assert.ok(Array.isArray(userPayload.referenceQuestions));
+  assert.ok(userPayload.referenceQuestions.length > 0);
+
+  const sourceQuestions = new Set(questionBank.backendNode.junior.map((item) => item.question));
+  for (const item of userPayload.referenceQuestions) {
+    assert.ok(sourceQuestions.has(item.question), `"${item.question}" should be a real backendNode.junior bank entry`);
+  }
+
+  // The curated question TEXT lives in the user payload, never hardcoded into the system prompt.
+  for (const item of userPayload.referenceQuestions) {
+    assert.ok(!systemMessage.content.includes(item.question));
+  }
+  assert.ok(systemMessage.content.includes("referenceQuestions"));
+  assert.ok(systemMessage.content.includes("product team"));
+});
+
+test("an unmapped role falls back to no bank grounding without throwing", async () => {
+  const { client, getCapturedMessages } = fakeClient(questionFixture(2));
+  ai.__setClientForTests(client);
+
+  // "java-backend" deliberately has no bank domain (see questionBank.service.js).
+  const result = await ai.generateInterviewQuestions(baseArgs({ role: "java-backend", questionCount: 2 }));
+
+  assert.equal(result.questions.length, 2);
+  const userPayload = JSON.parse(getCapturedMessages().find((m) => m.role === "user").content);
+  assert.deepEqual(userPayload.referenceQuestions, []);
+});
+
+test("the prompt includes composition guidance across question types", async () => {
+  const { client, getCapturedMessages } = fakeClient(questionFixture(2));
+  ai.__setClientForTests(client);
+
+  await ai.generateInterviewQuestions(baseArgs({ questionCount: 2 }));
+
+  const systemMessage = getCapturedMessages().find((m) => m.role === "system");
+  assert.ok(systemMessage.content.includes("50%"));
+  assert.ok(systemMessage.content.toLowerCase().includes("behavioral"));
 });
