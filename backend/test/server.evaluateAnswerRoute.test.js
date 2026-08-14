@@ -7,14 +7,14 @@ const { createServer } = require("node:http");
 // project's existing convention that Postgres is a documented prerequisite for running the backend
 // at all (see README). It does not require a configured OPENAI_API_KEY.
 
-const { handleRequest, initDatabase, db } = require("../server");
+const { app, initDatabase, db } = require("../src/server");
 
 let server;
 let baseUrl;
 
 test.before(async () => {
   await initDatabase();
-  server = createServer(handleRequest);
+  server = createServer(app);
   await new Promise((resolve) => server.listen(0, resolve));
   const { port } = server.address();
   baseUrl = `http://127.0.0.1:${port}`;

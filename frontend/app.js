@@ -1399,10 +1399,10 @@ async function renderHistory() {
           return `
             <li>
               <div class="history-item-header">
-                <span class="history-candidate">${item.candidateName || 'Unknown'}</span>
+                <span class="history-candidate">${escapeHtml(item.candidateName || 'Unknown')}</span>
                 <span class="history-date">${formatDate(item.startedAt)}</span>
               </div>
-              <span class="history-details">${item.role || item.topic} | ${item.level} | ${item.interviewLanguage || "he"} | ${item.interviewMinutes || "?"} ${text.minutes} | ${item.status}</span>
+              <span class="history-details">${escapeHtml(item.role || item.topic)} | ${escapeHtml(item.level)} | ${escapeHtml(item.interviewLanguage || "he")} | ${item.interviewMinutes || "?"} ${text.minutes} | ${escapeHtml(item.status)}</span>
               <div class="history-score-section">
                 <span class="history-score">${item.score}/${item.maxScore}</span>
                 <span class="history-improvement" data-improvement="${item.improvementScore >= 0 ? 'positive' : item.improvementScore < 0 ? 'negative' : 'neutral'}">${improvementText}</span>
@@ -2252,7 +2252,19 @@ submitAnswer.addEventListener("click", evaluateAnswer);
 nextQuestion.addEventListener("click", goToNextQuestion);
 restart.addEventListener("click", resetInterview);
 clearHistory.addEventListener("click", async () => {
-  await apiRequest("/api/interviews", { method: "DELETE" });
+  const language = getInterfaceLanguage();
+  const confirmMessage = language === "en"
+    ? "Delete all interview history? This cannot be undone."
+    : "למחוק את כל היסטוריית הראיונות? לא ניתן לבטל פעולה זו.";
+
+  if (!window.confirm(confirmMessage)) {
+    return;
+  }
+
+  await apiRequest("/api/interviews", {
+    method: "DELETE",
+    body: JSON.stringify({ confirm: "DELETE_ALL_INTERVIEWS" }),
+  });
   renderHistory();
 });
 

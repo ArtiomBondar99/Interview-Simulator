@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || "test-key-placeholder";
 
-const ai = require("../ai");
+const ai = require("../src/services/ai.service");
 
 function fakeClient(parsedFixture) {
   let capturedMessages = null;
