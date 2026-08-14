@@ -75,7 +75,7 @@ async function finishInterview(req, res, next) {
     const answers = Array.isArray(body.answers) ? body.answers : [];
     const summary = body.summary && typeof body.summary === "object" ? body.summary : {};
 
-    const found = await interviewService.finishInterview(id, {
+    const result = await interviewService.finishInterview(id, {
       score,
       maxScore,
       overallFeedback,
@@ -83,8 +83,13 @@ async function finishInterview(req, res, next) {
       summary,
     });
 
-    if (!found) {
+    if (!result.found) {
       res.status(404).json({ error: "Interview not found." });
+      return;
+    }
+
+    if (result.alreadyCompleted) {
+      res.status(409).json({ error: "Interview is already completed." });
       return;
     }
 

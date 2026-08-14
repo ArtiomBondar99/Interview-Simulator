@@ -51,7 +51,9 @@ test("POST /api/ai/evaluate-answer returns 503 with a generic message when OPENA
   // (not configured) or a 200 (a real evaluation) is an acceptable, non-crashing outcome.
   assert.ok(status === 503 || status === 200);
   if (status === 503) {
-    assert.equal(body.error, "OPENAI_API_KEY is not configured on the server.");
+    // AI-originated errors use the { code, message } shape (see utils/errors.js AppError).
+    assert.equal(body.error.code, "AI_NOT_CONFIGURED");
+    assert.equal(body.error.message, "OPENAI_API_KEY is not configured on the server.");
   }
 });
 
